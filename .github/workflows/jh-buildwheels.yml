@@ -40,7 +40,7 @@ concurrency:
 jobs:
   init:
     name: Initialize build
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER }}
     outputs:
       architectures: ${{ steps.info.outputs.architectures }}
       version: ${{ steps.version.outputs.version }}
@@ -49,17 +49,17 @@ jobs:
       requirements: ${{ steps.requirements.outputs.changed }}
     steps:
       - name: Checkout the repository
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5.0.0
         with:
           fetch-depth: 0
 
       - name: Get information
         id: info
-        uses: jethub-homeassistant/actions/helpers/info@master-jethub
+        uses: jethome-homeassistant/actions/helpers/info@master-jethub
 
       - name: Get version
         id: version
-        uses: jethub-homeassistant/actions/helpers/version@master-jethub
+        uses: jethome-homeassistant/actions/helpers/version@master-jethub
         with:
           type: ${{ env.BUILD_TYPE }}
 
@@ -81,7 +81,7 @@ jobs:
         arch: ${{ fromJson(needs.init.outputs.architectures) }}
     steps:
       - name: Checkout the repository
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v5.0.0
         with:
           fetch-depth: 0
 
@@ -95,7 +95,7 @@ jobs:
 
       - name: Build wheels
         if: needs.init.outputs.requirements == 'true'
-        uses: jethub-homeassistant/wheels@2025.03.0
+        uses: jethome-homeassistant/wheels@2025.09.1
         with:
           abi: cp313
           tag: musllinux_1_2

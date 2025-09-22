@@ -139,7 +139,7 @@ jobs:
 
       - name: Install Cosign
         if: needs.init.outputs.publish == 'true'
-        uses: sigstore/cosign-installer@v3.10.0
+        uses: sigstore/cosign-installer@v3.9.2
         with:
           cosign-release: "v2.4.3"
 
@@ -168,7 +168,7 @@ jobs:
         run: echo "BUILD_ARGS=--test" >> $GITHUB_ENV
 
       - name: Build supervisor
-        uses: jethome-homeassistant/builder@2025.09.0
+        uses: jethome-homeassistant/builder@2025.03.0
         with:
           args: |
             $BUILD_ARGS \
@@ -222,7 +222,7 @@ jobs:
 
       - name: Build the Supervisor
         if: needs.init.outputs.publish != 'true'
-        uses: jethome-homeassistant/builder@2025.09.0
+        uses: jethome-homeassistant/builder@2025.03.0
         with:
           args: |
             --test \

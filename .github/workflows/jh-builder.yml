@@ -176,8 +176,6 @@ jobs:
             --target /data \
             --cosign \
             --generic ${{ needs.init.outputs.version }}
-        env:
-          CAS_API_KEY: ${{ secrets.CAS_TOKEN }}
 
   version:
     name: Update version
@@ -215,7 +213,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout the repository
-        uses: actions/checkout@v5.0.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - name: update build.yaml
         run: cp -f build-jethub.yaml build.yaml
@@ -309,33 +307,6 @@ jobs:
           if [ "$test" != "started" ]; then
             echo $testout
             exit 6
-          fi
-
-      - name: Check the Supervisor code sign
-        if: needs.init.outputs.publish == 'true'
-        run: |
-          echo "Enable Content-Trust"
-          test=$(docker exec hassio_cli ha security options --content-trust=true --no-progress --raw-json | jq -r '.result')
-          if [ "$test" != "ok" ]; then
-            exit 7
-          fi
-
-          echo "Run supervisor health check"
-          test=$(docker exec hassio_cli ha resolution healthcheck --no-progress --raw-json | jq -r '.result')
-          if [ "$test" != "ok" ]; then
-            exit 8
-          fi
-
-          echo "Check supervisor unhealthy"
-          test=$(docker exec hassio_cli ha resolution info --no-progress --raw-json | jq -r '.data.unhealthy[]')
-          if [ "$test" != "" ]; then
-            exit 9
-          fi
-
-          echo "Check supervisor supported"
-          test=$(docker exec hassio_cli ha resolution info --no-progress --raw-json | jq -r '.data.unsupported[]')
-          if [[ "$test" =~ source_mods ]]; then
-            exit 10
           fi
 
       - name: Create full backup

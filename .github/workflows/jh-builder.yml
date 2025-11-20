@@ -46,7 +46,7 @@ concurrency:
 jobs:
   init:
     name: Initialize build
-    runs-on: ${{ vars.RUNNER }}
+    runs-on: ubuntu-latest
     outputs:
       architectures: ${{ steps.info.outputs.architectures }}
       version: ${{ steps.version.outputs.version }}
@@ -87,7 +87,7 @@ jobs:
   build:
     name: Build ${{ matrix.arch }} supervisor
     needs: init
-    runs-on: ${{ vars.RUNNER }}
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
@@ -180,7 +180,7 @@ jobs:
   version:
     name: Update version
     needs: ["init", "run_supervisor"]
-    runs-on: ${{ vars.RUNNER }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout the repository
         if: needs.init.outputs.publish == 'true'
@@ -207,7 +207,7 @@ jobs:
           channel: ${{ needs.init.outputs.channel }}
 
   run_supervisor:
-    runs-on: ${{ vars.RUNNER }}
+    runs-on: ubuntu-latest
     name: Run the Supervisor
     needs: ["build", "init"]
     timeout-minutes: 60

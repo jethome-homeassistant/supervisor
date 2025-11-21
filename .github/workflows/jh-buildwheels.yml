@@ -49,7 +49,7 @@ jobs:
       requirements: ${{ steps.requirements.outputs.changed }}
     steps:
       - name: Checkout the repository
-        uses: actions/checkout@v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           fetch-depth: 0
 
@@ -81,7 +81,7 @@ jobs:
         arch: ${{ fromJson(needs.init.outputs.architectures) }}
     steps:
       - name: Checkout the repository
-        uses: actions/checkout@v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           fetch-depth: 0
 
@@ -95,7 +95,7 @@ jobs:
 
       - name: Build wheels
         if: needs.init.outputs.requirements == 'true'
-        uses: jethome-homeassistant/wheels@2025.10.0
+        uses: jethome-homeassistant/wheels@2025.12.0
         with:
           abi: cp313
           tag: musllinux_1_2

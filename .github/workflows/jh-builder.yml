@@ -256,12 +256,16 @@ jobs:
 
       - name: Wait for Supervisor to come up
         run: |
-          SUPERVISOR=$(docker inspect --format='{{.NetworkSettings.IPAddress}}' hassio_supervisor)
+          SUPERVISOR=$(docker inspect -f'{{.NetworkSettings.Networks.bridge.IPAddress}}' hassio_supervisor)
           ping="error"
-          while [ "$ping" != "ok" ]; do
-            ping=$(curl -sSL "http://$SUPERVISOR/supervisor/ping" | jq -r '.result')
+          i=0
+          until [ "$ping" = "ok" ] || [ $i -ge 60 ]; do
+            ping=$(curl -sS "http://$SUPERVISOR/supervisor/ping" | jq -r '.result' 2>/dev/null || echo "error")
+            echo "ping result: $ping"
             sleep 5
+            i=$((i+1))
           done
+          [ "$ping" = "ok" ] || { echo "Supervisor didn't start"; docker logs hassio_supervisor; exit 1; }
 
       - name: Check the Supervisor
         run: |
@@ -336,12 +340,16 @@ jobs:
 
       - name: Wait for Supervisor to come up
         run: |
-          SUPERVISOR=$(docker inspect --format='{{.NetworkSettings.IPAddress}}' hassio_supervisor)
+          SUPERVISOR=$(docker inspect -f'{{.NetworkSettings.Networks.bridge.IPAddress}}' hassio_supervisor)
           ping="error"
-          while [ "$ping" != "ok" ]; do
-            ping=$(curl -sSL "http://$SUPERVISOR/supervisor/ping" | jq -r '.result')
+          i=0
+          until [ "$ping" = "ok" ] || [ $i -ge 60 ]; do
+            ping=$(curl -sS "http://$SUPERVISOR/supervisor/ping" | jq -r '.result' 2>/dev/null || echo "error")
+            echo "ping result: $ping"
             sleep 5
+            i=$((i+1))
           done
+          [ "$ping" = "ok" ] || { echo "Supervisor didn't start"; docker logs hassio_supervisor; exit 1; }
 
       - name: Restore SSH add-on from backup
         run: |

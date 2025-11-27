@@ -170,6 +170,7 @@ jobs:
       - name: Build supervisor
         uses: jethome-homeassistant/builder@2026.02.1
         with:
+          image: ${{ matrix.arch }}
           args: |
             $BUILD_ARGS \
             --${{ matrix.arch }} \

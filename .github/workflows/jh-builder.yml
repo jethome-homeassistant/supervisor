@@ -403,7 +403,13 @@ jobs:
       packages: write
     strategy:
       matrix:
-        arch: ["armhf", "armv7", "i386"]
+        include:
+          - arch: armhf
+            platform: linux/arm/v6
+          - arch: armv7
+            platform: linux/arm/v7
+          - arch: i386
+            platform: linux/386
     env:
       # Last available release for deprecated architectures
       FROZEN_VERSION: "2025.11.5"
@@ -431,6 +437,7 @@ jobs:
         run: |
           crane auth login ghcr.io -u ${{ github.repository_owner }} -p ${{ secrets.GITHUB_TOKEN }}
           crane mutate \
+            --platform ${{ matrix.platform }} \
             --label io.hass.version=${{ needs.init.outputs.version }} \
             --tag ghcr.io/jethome-homeassistant/${{ matrix.arch }}-hassio-supervisor:${{ needs.init.outputs.version }} \
             ghcr.io/jethome-homeassistant/${{ matrix.arch }}-hassio-supervisor:${{ env.FROZEN_VERSION }}

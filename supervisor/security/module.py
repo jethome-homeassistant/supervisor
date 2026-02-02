@@ -44,13 +44,5 @@ class Security(FileConfiguration, CoreSysAttributes):
 
     async def verify_secret(self, pwned_hash: str) -> None:
         """Verify pwned state of a secret."""
-        if not self.pwned:
-            _LOGGER.warning("Disabled pwned, skip validation")
-            return
-
-        try:
-            await check_pwned_password(self.sys_websession, pwned_hash)
-        except PwnedError:
-            if self.force:
-                raise
-            return
+        _LOGGER.debug("Have I Been Pwned check disabled for JetHub build")
+        return

@@ -77,7 +77,7 @@ jobs:
 
       - name: Get changed files
         id: changed_files
-        if: github.event_name != 'release'
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
         continue-on-error: true
         uses: masesgroup/retrieve-changed-files@491e80760c0e28d36ca6240a27b1ccb8e1402c13 # v3.0.0
 
@@ -87,6 +87,9 @@ jobs:
           # No wheels build necessary for releases
           if [[ "${{ github.event_name }}" == "release" ]]; then
             echo "build_wheels=false" >> "$GITHUB_OUTPUT"
+            # Always build wheels for manual dispatches
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "build_wheels=true" >> "$GITHUB_OUTPUT"
           elif [[ "${{ steps.changed_files.outputs.all }}" =~ (requirements\.txt|build\.yaml|\.github/workflows/builder\.yml) ]]; then
             echo "build_wheels=true" >> "$GITHUB_OUTPUT"
           else
@@ -303,63 +306,107 @@ jobs:
       - name: Start the Supervisor
         run: docker start hassio_supervisor
 
-      - name: Wait for Supervisor to come up
+      - &wait_for_supervisor
+        name: Wait for Supervisor to come up
         run: |
-          SUPERVISOR=$(docker inspect -f'{{.NetworkSettings.Networks.bridge.IPAddress}}' hassio_supervisor)
-          ping="error"
-          i=0
-          until [ "$ping" = "ok" ] || [ $i -ge 60 ]; do
-            ping=$(curl -sS "http://$SUPERVISOR/supervisor/ping" | jq -r '.result' 2>/dev/null || echo "error")
-            echo "ping result: $ping"
-            sleep 5
-            i=$((i+1))
+          until SUPERVISOR=$(docker inspect --format='{{.NetworkSettings.Networks.hassio.IPAddress}}' hassio_supervisor 2>/dev/null) && \
+                [ -n "$SUPERVISOR" ] && [ "$SUPERVISOR" != "<no value>" ]; do
+            echo "Waiting for network configuration..."
+            sleep 1
           done
-          [ "$ping" = "ok" ] || { echo "Supervisor didn't start"; docker logs hassio_supervisor; exit 1; }
+          echo "Waiting for Supervisor API at http://${SUPERVISOR}/supervisor/ping"
+          timeout=300
+          elapsed=0
+
+          while [ $elapsed -lt $timeout ]; do
+            if response=$(curl -sSf "http://${SUPERVISOR}/supervisor/ping" 2>/dev/null); then
+              if echo "$response" | jq -e '.result == "ok"' >/dev/null 2>&1; then
+                echo "Supervisor is up! (took ${elapsed}s)"
+                exit 0
+              fi
+            fi
+
+            if [ $((elapsed % 15)) -eq 0 ]; then
+              echo "Still waiting... (${elapsed}s/${timeout}s)"
+            fi
+
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+
+          echo "ERROR: Supervisor failed to start within ${timeout}s"
+          echo "Last response: $response"
+          echo "Checking supervisor logs..."
+          docker logs --tail 50 hassio_supervisor
+          exit 1
+
+      # Wait for Core to come up so subsequent steps (backup, addon install) succeed.
+      # On first startup, Supervisor installs Core via the "home_assistant_core_install"
+      # job (which pulls the image and then starts Core). Jobs with cleanup=True are
+      # removed from the jobs list once done, so we poll until it's gone.
+      - name: Wait for Core to be started
+        run: |
+          echo "Waiting for Home Assistant Core to be installed and started..."
+          timeout=300
+          elapsed=0
+
+          while [ $elapsed -lt $timeout ]; do
+            jobs=$(docker exec hassio_cli ha jobs info --no-progress --raw-json | jq -r '.data.jobs[] | select(.name == "home_assistant_core_install" and .done == false) | .name' 2>/dev/null)
+            if [ -z "$jobs" ]; then
+              echo "Home Assistant Core install/start complete (took ${elapsed}s)"
+              exit 0
+            fi
+
+            if [ $((elapsed % 15)) -eq 0 ]; then
+              echo "Core still installing... (${elapsed}s/${timeout}s)"
+            fi
+
+            sleep 5
+            elapsed=$((elapsed + 5))
+          done
+
+          echo "ERROR: Home Assistant Core failed to install/start within ${timeout}s"
+          docker logs --tail 50 hassio_supervisor
+          exit 4
 
       - name: Check the Supervisor
         run: |
           echo "Checking supervisor info"
           test=$(docker exec hassio_cli ha supervisor info --no-progress --raw-json | jq -r '.result')
           if [ "$test" != "ok" ]; then
-            exit 1
+            exit 5
           fi
 
           echo "Checking supervisor network info"
           test=$(docker exec hassio_cli ha network info --no-progress --raw-json | jq -r '.result')
           if [ "$test" != "ok" ]; then
-            exit 1
+            exit 6
           fi
 
-      - name: Check the Store / Addon
+      - name: Check the Store / App
         run: |
-          echo "Install Core SSH Add-on"
-          test=$(docker exec hassio_cli ha addons install core_ssh --no-progress --raw-json | jq -r '.result')
+          echo "Install Core SSH app"
+          test=$(docker exec hassio_cli ha apps install core_ssh --no-progress --raw-json | jq -r '.result')
           if [ "$test" != "ok" ]; then
-            exit 1
+            exit 7
           fi
 
           # Make sure it actually installed
-          testout=$(docker exec hassio_cli ha addons info core_ssh --no-progress --raw-json)
-          test=$(echo ${testout} | jq -r '.data.version')
+          test=$(docker exec hassio_cli ha apps info core_ssh --no-progress --raw-json | jq -r '.data.version')
           if [[ "$test" == "null" ]]; then
-            echo $testout
-            exit 4
+            exit 8
           fi
 
-          echo "Start Core SSH Add-on"
-          testout=$(docker exec hassio_cli ha addons start core_ssh --no-progress --raw-json)
-          test=$(echo ${testout} | jq -r '.result')
+          echo "Start Core SSH app"
+          test=$(docker exec hassio_cli ha apps start core_ssh --no-progress --raw-json | jq -r '.result')
           if [ "$test" != "ok" ]; then
-            echo $testout
-            exit 5
+            exit 9
           fi
 
           # Make sure its state is started
-          testout="$(docker exec hassio_cli ha addons info core_ssh --no-progress --raw-json)"
-          test=$(echo ${testout} | jq -r '.data.state')
+          test="$(docker exec hassio_cli ha apps info core_ssh --no-progress --raw-json | jq -r '.data.state')"
           if [ "$test" != "started" ]; then
-            echo $testout
-            exit 6
+            exit 10
           fi
 
       - name: Create full backup
@@ -371,12 +418,10 @@ jobs:
           fi
           echo "slug=$(echo $test | jq -r '.data.slug')" >> "$GITHUB_OUTPUT"
 
-      - name: Uninstall SSH add-on
+      - name: Uninstall SSH app
         run: |
-          testout=$(docker exec hassio_cli ha addons uninstall core_ssh --no-progress --raw-json)
-          test=$(echo ${testout} | jq -r '.result')
+          test=$(docker exec hassio_cli ha apps uninstall core_ssh --no-progress --raw-json | jq -r '.result')
           if [ "$test" != "ok" ]; then
-            echo ${testout}
             exit 12
           fi
 
@@ -387,52 +432,34 @@ jobs:
             exit 13
           fi
 
-      - name: Wait for Supervisor to come up
-        run: |
-          SUPERVISOR=$(docker inspect -f'{{.NetworkSettings.Networks.bridge.IPAddress}}' hassio_supervisor)
-          ping="error"
-          i=0
-          until [ "$ping" = "ok" ] || [ $i -ge 60 ]; do
-            ping=$(curl -sS "http://$SUPERVISOR/supervisor/ping" | jq -r '.result' 2>/dev/null || echo "error")
-            echo "ping result: $ping"
-            sleep 5
-            i=$((i+1))
-          done
-          [ "$ping" = "ok" ] || { echo "Supervisor didn't start"; docker logs hassio_supervisor; exit 1; }
+      - *wait_for_supervisor
 
-      - name: Restore SSH add-on from backup
+      - name: Restore SSH app from backup
         run: |
-          testout=$(docker exec hassio_cli ha backups restore ${{ steps.backup.outputs.slug }} --addons core_ssh --no-progress --raw-json)
-          test=$(echo ${testout} | jq -r '.result')
+          test=$(docker exec hassio_cli ha backups restore ${{ steps.backup.outputs.slug }} --app core_ssh --no-progress --raw-json | jq -r '.result')
           if [ "$test" != "ok" ]; then
-            echo ${testout}
             exit 14
           fi
 
           # Make sure it actually installed
-          testout=$(docker exec hassio_cli ha addons info core_ssh --no-progress --raw-json)
-          test=$(echo ${testout} | jq -r '.data.version')
+          test=$(docker exec hassio_cli ha apps info core_ssh --no-progress --raw-json | jq -r '.data.version')
           if [[ "$test" == "null" ]]; then
-            echo ${testout}
             exit 15
           fi
 
           # Make sure its state is started
-          testout="$(docker exec hassio_cli ha addons info core_ssh --no-progress --raw-json)"
-          test="$(echo ${testout} | jq -r '.data.state')"
+          test="$(docker exec hassio_cli ha apps info core_ssh --no-progress --raw-json | jq -r '.data.state')"
           if [ "$test" != "started" ]; then
-            echo ${testout}
             exit 16
           fi
 
+
       - name: Restore SSL directory from backup
         run: |
-          testout=$(docker exec hassio_cli ha backups restore ${{ steps.backup.outputs.slug }} --folders ssl --no-progress --raw-json)
-          test=$(echo ${testout} | jq -r '.result')
-            if [ "$test" != "ok" ]; then
-              echo ${testout}
-              exit 17
-            fi
+          test=$(docker exec hassio_cli ha backups restore ${{ steps.backup.outputs.slug }} --folders ssl --no-progress --raw-json | jq -r '.result')
+          if [ "$test" != "ok" ]; then
+            exit 17
+          fi
 
       - name: Get supervisor logs on failiure
         if: ${{ cancelled() || failure() }}

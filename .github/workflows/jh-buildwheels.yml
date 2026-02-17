@@ -20,10 +20,10 @@ on:
   push:
     branches: ["main-jethub"]
     paths:
+      - ".github/workflows/jh-builder.yml"
+      - ".github/workflows/jh-buildwheels.yml"
       - "rootfs/**"
       - "supervisor/**"
-      - build.yaml
-      - build-jethub.yaml
       - Dockerfile
       - requirements.txt
       - setup.py
@@ -32,6 +32,7 @@ env:
   DEFAULT_PYTHON: "3.14.3"
   BUILD_NAME: supervisor
   BUILD_TYPE: supervisor
+  ARCHITECTURES: '["amd64", "aarch64"]'
 
 concurrency:
   group: "${{ github.workflow }}-${{ github.ref }}"
@@ -42,7 +43,7 @@ jobs:
     name: Initialize build
     runs-on: ${{ vars.RUNNER }}
     outputs:
-      architectures: ${{ steps.info.outputs.architectures }}
+      architectures: ${{ env.ARCHITECTURES }}
       version: ${{ steps.version.outputs.version }}
       channel: ${{ steps.version.outputs.channel }}
       publish: ${{ steps.version.outputs.publish }}
@@ -52,10 +53,6 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-
-      - name: Get information
-        id: info
-        uses: jethome-homeassistant/actions/helpers/info@master-jethub
 
       - name: Get version
         id: version
